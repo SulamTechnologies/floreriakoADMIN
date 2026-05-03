@@ -12,6 +12,7 @@ interface AuthState {
   ready: boolean;
   error: string | null;
   signIn: (email: string, password: string, captchaToken?: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   initialize: () => () => void;
 }
@@ -39,6 +40,14 @@ export const useAuthStore = create<AuthState>()((set) => ({
       await supabase.auth.signOut();
       throw new Error("Acceso denegado. Se requiere rol de superadministrador.");
     }
+  },
+
+  signInWithGoogle: async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin },
+    });
+    if (error) throw new Error(error.message);
   },
 
   signOut: async () => {
