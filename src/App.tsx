@@ -7,7 +7,7 @@ export function App() {
   const initialize = useAuthStore((s) => s.initialize);
 
   useEffect(() => {
-    initialize();
+    return initialize();
   }, [initialize]);
 
   return <RouterProvider router={router} />;
