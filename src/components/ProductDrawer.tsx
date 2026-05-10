@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Check, ToggleLeft, ToggleRight, ImageOff, Tag } from "lucide-react";
+import { X, Check, ToggleLeft, ToggleRight, ImageOff, Tag, Upload, Trash2 } from "lucide-react";
 import { useCategories } from "@/features/categories/api";
 import type { CreateProductPayload } from "@/features/products/api";
 import type { AdminProductDTO } from "@/types/api";
+import { uploadProductImage } from "@/shared/lib/uploadImage";
 
 interface Props {
   open: boolean;
@@ -37,6 +38,41 @@ export function ProductDrawer({ open, product, onClose, onSubmit, isPending }: P
   const { data: categories = [] } = useCategories();
   const [form, setForm] = useState<CreateProductPayload>(EMPTY);
   const [imgError, setImgError] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = useCallback(async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      setUploadError("Solo se permiten imágenes");
+      return;
+    }
+    setUploadError(null);
+    setUploading(true);
+    try {
+      const url = await uploadProductImage(file);
+      setForm((f) => ({ ...f, image_url: url }));
+      setImgError(false);
+    } catch {
+      setUploadError("Error al subir imagen. Intenta de nuevo.");
+    } finally {
+      setUploading(false);
+    }
+  }, []);
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  }
+
+  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) handleFile(file);
+    e.target.value = "";
+  }
 
   useEffect(() => {
     if (product) {
@@ -114,22 +150,83 @@ export function ProductDrawer({ open, product, onClose, onSubmit, isPending }: P
 
             {/* Body */}
             <form id="product-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-              {/* Image preview */}
-              <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-gray-50 border border-gray-100 flex items-center justify-center">
+              {/* Image upload */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">Imagen del producto</label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleInputChange}
+                />
+
                 {hasImage ? (
-                  <img src={form.image_url} alt="Preview" className="w-full h-full object-cover" onError={() => setImgError(true)} />
+                  <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-gray-50 border border-gray-100 group">
+                    <img
+                      src={form.image_url}
+                      alt="Preview"
+                      className="w-full h-full object-cover"
+                      onError={() => setImgError(true)}
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center gap-1.5 bg-white text-gray-800 text-xs font-medium px-3 py-2 rounded-xl hover:bg-gray-100 transition-colors"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        Cambiar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setForm((f) => ({ ...f, image_url: "" })); setImgError(false); }}
+                        className="flex items-center gap-1.5 bg-red-500 text-white text-xs font-medium px-3 py-2 rounded-xl hover:bg-red-600 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Quitar
+                      </button>
+                    </div>
+                  </div>
                 ) : (
-                  <div className="flex flex-col items-center gap-2 text-gray-300">
-                    <ImageOff className="w-8 h-8" strokeWidth={1} />
-                    <span className="text-xs">Vista previa</span>
+                  <div
+                    onClick={() => !uploading && fileInputRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                    onDragLeave={() => setDragging(false)}
+                    onDrop={handleDrop}
+                    className={`w-full aspect-video rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors ${
+                      dragging ? "border-brand-400 bg-brand-50" : "border-gray-200 bg-gray-50 hover:border-brand-300 hover:bg-brand-50/50"
+                    }`}
+                  >
+                    {uploading ? (
+                      <>
+                        <svg className="w-6 h-6 animate-spin text-brand-500" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                        </svg>
+                        <span className="text-xs text-gray-500">Subiendo...</span>
+                      </>
+                    ) : (
+                      <>
+                        {dragging ? (
+                          <Upload className="w-8 h-8 text-brand-400" strokeWidth={1.5} />
+                        ) : (
+                          <ImageOff className="w-8 h-8 text-gray-300" strokeWidth={1} />
+                        )}
+                        <div className="text-center">
+                          <p className="text-xs font-medium text-gray-500">
+                            {dragging ? "Suelta aquí" : "Arrastra una imagen o haz clic para subir"}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">PNG, JPG, WEBP</p>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
-              </div>
 
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1.5">URL de imagen</label>
-                <input type="url" value={form.image_url} onChange={(e) => { setImgError(false); setForm((f) => ({ ...f, image_url: e.target.value })); }}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" placeholder="https://..." />
+                {uploadError && (
+                  <p className="mt-1.5 text-xs text-red-500">{uploadError}</p>
+                )}
               </div>
 
               <div>
@@ -200,9 +297,9 @@ export function ProductDrawer({ open, product, onClose, onSubmit, isPending }: P
               <button type="button" onClick={onClose} className="flex-1 border border-gray-200 text-gray-700 font-medium py-2.5 rounded-xl hover:bg-gray-50 transition-colors text-sm">
                 Cancelar
               </button>
-              <button type="submit" form="product-form" disabled={isPending}
+              <button type="submit" form="product-form" disabled={isPending || uploading}
                 className="flex-1 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white font-semibold py-2.5 rounded-xl transition-colors text-sm flex items-center justify-center gap-2">
-                {isPending ? "Guardando..." : <><Check className="w-4 h-4" />{product ? "Guardar cambios" : "Crear producto"}</>}
+                {isPending ? "Guardando..." : uploading ? "Subiendo imagen..." : <><Check className="w-4 h-4" />{product ? "Guardar cambios" : "Crear producto"}</>}
               </button>
             </div>
           </motion.div>
